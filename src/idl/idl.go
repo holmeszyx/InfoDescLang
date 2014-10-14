@@ -5,9 +5,9 @@ package idl
 
 const (
 	// 信息的结束符号
-	INFO_SUFFIX = ":"
+	INFO_SUFFIX = byte(':')
 	// 属性的起始符号
-	ATTR_PREFIX = "-"
+	ATTR_PREFIX = byte('-')
 )
 
 // 信息
@@ -52,17 +52,22 @@ type AttributeGroup []*Attribute
 
 // 添加一个属性
 func (g *AttributeGroup) Add(attr *Attribute){
-	g = append(g, attr)
+	t := *g
+	t = append(t, attr)
+	*g = t
 }
 
 // 移除
 func (g *AttributeGroup) Remove(attr *Attribute){
-	if (len(g) == 0){
+	t := *g
+
+	if (len(t) == 0){
 		return
 	}
 
+
 	item := -1
-	for i, v := range(g){
+	for i, v := range(t){
 		if v.Equals(attr) {
 			item = i
 			break
@@ -70,6 +75,7 @@ func (g *AttributeGroup) Remove(attr *Attribute){
 	}
 
 	if item != -1 {
-		g = append(g[:item], g[item + 1 :])
+		t = append(t[:item], t[item + 1 :]...)
+		*g = t
 	}
 }

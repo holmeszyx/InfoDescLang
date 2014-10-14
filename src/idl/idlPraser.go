@@ -8,6 +8,19 @@ import (
 	"errors"
 )
 
+// 空属性
+var ErrEmptyAttr = errors.New("Attribute is empty");
+// 不是属性，不是以"-" 开头
+var ErrNotAttr = errors.New("Not attribute")
+
+// 不是信息头, 不是以 ":"结尾
+var ErrNotInfo = errors.New("Not information header")
+// 信息头
+var ErrEmptyInfo = errors.New("Information header is empty")
+
+// 空行
+var ErrEmptyLine = errors.New("Empty line");
+
 // 信息解析器
 type IdlPraser interface {
 
@@ -25,10 +38,23 @@ type SimpleIdlParser struct {
 	parsedLine int
 }
 
-func NewSimpleIdlParser(r *io.Reader) *SimpleIdlParser{
+func NewSimpleIdlParser(r io.Reader) *SimpleIdlParser{
 	parser := &SimpleIdlParser{}
 	parser.reader = bufio.NewReader(r)
 	return parser
+}
+
+func (s *SimpleIdlParser) ParseInfomations() []*Information{
+	infos := make([]*Information, 0, 16)
+	var err error = nil
+	for err != io.EOF{
+		info, e := s.ParseInfo()
+		if info != nil{
+			infos = append(infos, info)
+		}
+		err = e
+	}
+	return infos
 }
 
 // 一行已解析
@@ -38,6 +64,50 @@ func (s *SimpleIdlParser) lineParsed() int {
 }
 
 func (s *SimpleIdlParser) ParseInfo() (info *Information, e error){
+	line, err := readLine(s.reader)
+	if err != nil {
+		return nil, err
+	}
+	//log.Println("info,", line)
+	s.lineParsed()
+
+	firstNoSpace := getFirstNoSpaceIndex(line)
+	if firstNoSpace > -1{
+		if line[firstNoSpace] == byte(INFO_SUFFIX) {
+			log.Printf("information can not start with ':' or empty information: line %d: %s", s.parsedLine, line)
+			return nil, ErrEmptyInfo
+		}
+
+		line = strings.TrimSpace(line[firstNoSpace:])
+		suffixIndex := strings.LastIndex(line, string(INFO_SUFFIX))
+		if suffixIndex == -1{
+			log.Printf("information not end with ':': line %d: %s", s.parsedLine, line)
+			return nil, ErrNotInfo
+		}
+
+		line = strings.TrimSpace(line[:suffixIndex])
+
+		info = &Information{line, make([]*Attribute, 0, 8)}
+
+		for {
+			attr, err := s.ParserAttribute()
+			if attr != nil{
+				info.Attrs.Add(attr)
+			}
+
+			if err == ErrEmptyLine || err == io.EOF{
+				if err == io.EOF{
+					e = io.EOF
+				}
+				break
+			}
+		}
+
+		return info, e
+	}else{
+		return nil, ErrEmptyLine
+	}
+
 
 	return
 }
@@ -47,22 +117,27 @@ func (s *SimpleIdlParser) ParserAttribute() (attr *Attribute, e error) {
 	if err != nil {
 		return nil, err
 	}
+	//log.Println("attr,", line)
 	s.lineParsed()
 
 	firstNoSpace := getFirstNoSpaceIndex(line)
-	if firstNoSpace > 0 {
+	if firstNoSpace > -1 {
 		if line[firstNoSpace] != byte(ATTR_PREFIX) {
-			log.Fatalf("Attribute not start with '-': line %d: %s", s.parsedLine, line)
+			log.Printf("Attribute not start with '-': line %d: %s", s.parsedLine, line)
+			return nil, ErrNotAttr
 		}
 
 		line = line[firstNoSpace+1:]
 		line = strings.TrimSpace(line)
 		if (len(line) == 0) {
-			e = errors.New("Attribute is empty")
+			e = ErrEmptyAttr
 			return nil, e
 		}
+
+		attr = &Attribute{"", line}
+		return
 	}else {
-		return nil, errors.New("Empty line")
+		return nil, ErrEmptyLine
 	}
 
 	return
@@ -75,7 +150,7 @@ func readLine(read *bufio.Reader)(string, error){
 	if e != nil{
 		return "", e
 	}
-	buff = append(buff, line)
+	buff = append(buff, line...)
 
 	for ; prefix; line, prefix, e = read.ReadLine(){
 		if e != nil{
